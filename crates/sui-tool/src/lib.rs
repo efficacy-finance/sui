@@ -12,7 +12,6 @@ use std::path::PathBuf;
 use sui_config::{genesis::Genesis, ValidatorInfo};
 use sui_core::authority_client::{AuthorityAPI, NetworkAuthorityClient};
 use sui_network::default_mysten_network_config;
-use sui_types::message_envelope::Message;
 use sui_types::object::ObjectFormatOptions;
 use sui_types::{base_types::*, messages::*, object::Owner};
 use tokio::time::Instant;
@@ -333,76 +332,27 @@ pub async fn get_object(
 pub async fn get_transaction(tx_digest: TransactionDigest, genesis: PathBuf) -> Result<String> {
     let clients = make_clients(genesis)?;
     let timer = Instant::now();
-    let responses = join_all(clients.iter().map(|(name, (v, client))| async {
+    let responses = join_all(clients.iter().map(|(name, (_v, client))| async {
         let result = client
             .handle_transaction_info_request(TransactionInfoRequest {
                 transaction_digest: tx_digest,
             })
             .await;
-        (
-            *name,
-            v.network_address().clone(),
-            result,
-            timer.elapsed().as_secs_f64(),
-        )
+        (*name, result, timer.elapsed().as_secs_f64())
     }))
     .await;
-
-    let responses = responses
-        .iter()
-        .sorted_by(|(_, _, resp_a, _), (_, _, resp_b, _)| {
-            let sort_key_a = resp_a
-                .as_ref()
-                .map(|ok_result| {
-                    (ok_result.signed_effects)
-                        .as_ref()
-                        .map(|effects| *effects.digest())
-                })
-                .ok();
-            let sort_key_b = resp_b
-                .as_ref()
-                .map(|ok_result| {
-                    (ok_result.signed_effects)
-                        .as_ref()
-                        .map(|effects| *effects.digest())
-                })
-                .ok();
-            Ord::cmp(&sort_key_a, &sort_key_b)
-        })
-        .group_by(|(_name, _addr, resp, _ts)| {
-            resp.as_ref().map(|ok_result| {
-                (ok_result.signed_effects)
-                    .as_ref()
-                    .map(|effects| (effects.data(), effects.data().digest()))
-            })
-        });
     let mut s = String::new();
-    for (i, (st, group)) in (&responses).into_iter().enumerate() {
-        match st {
-            Ok(Some((effects, effect_digest))) => {
-                writeln!(
-                    &mut s,
-                    "#{:<2} tx_digest: {:<68?} effects_digest: {:?}",
-                    i, tx_digest, effect_digest
-                )?;
-                writeln!(&mut s, "{:#?}", effects)?;
-            }
-            other => {
-                writeln!(&mut s, "#{:<2} {:#?}", i, other)?;
-            }
-        }
-        for (j, res) in group.enumerate() {
-            writeln!(
-                &mut s,
-                "        {:<4} {:<66} {:<56} (using {:.3} seconds)",
-                j,
-                res.0,
-                format!("{}", res.1),
-                res.3
-            )?;
-        }
-        writeln!(&mut s)?;
-    }
+    responses.into_iter().for_each(|(name, response, time)| {
+        writeln!(
+            &mut s,
+            "Query to {:?} took {:?} seconds. Result: {:?}\n",
+            name.concise(),
+            response,
+            time
+        )
+        .unwrap();
+    });
+    // TODO: Figure out how to pretty print the responses.
     Ok(s)
 }
 
