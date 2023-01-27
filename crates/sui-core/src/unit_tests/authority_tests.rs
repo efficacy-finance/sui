@@ -2862,7 +2862,7 @@ async fn create_and_retrieve_df_info(function: &IdentStr) -> (SuiAddress, Vec<Dy
         init_state_with_ids_and_object_basics(vec![(sender, gas_object_id)]).await;
 
     let create_outer_effects = create_move_object(
-        &object_basics,
+        &object_basics.0,
         &authority_state,
         &gas_object_id,
         &sender,
